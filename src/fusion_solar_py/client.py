@@ -263,6 +263,7 @@ class FusionSolarClient:
     ) -> dict:
         """Retrieves the complete plant usage statistics for the current day.
         :param plant_id: The plant's id
+        :param query_time: should be the zeroth second of the day (otherwise data is missing for that day)
         :type plant_id: str
         :return: _description_
         """
