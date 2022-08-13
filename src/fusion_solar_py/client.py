@@ -2,37 +2,15 @@
 
 import logging
 import requests
+from requests.exceptions import JSONDecodeError, HTTPError
 import time
-from datetime import datetime
 from functools import wraps
-import json
+import pandas
 
 from .exceptions import *
 
 # global logger object
 _LOGGER = logging.getLogger(__name__)
-
-
-class PowerStatus:
-    """Class representing the basic power status"""
-
-    def __init__(
-        self,
-        current_power_kw: float,
-        total_power_today_kwh: float,
-        total_power_kwh: float,
-    ):
-        """Create a new PowerStatus object
-        :param current_power_kw: The currently produced power in kW
-        :type current_power_kw: float
-        :param total_power_today_kwh: The total power produced that day in kWh
-        :type total_power_today_kwh: float
-        :param total_power_kwh: The total power ever produced
-        :type total_power_kwh: float
-        """
-        self.current_power_kw = current_power_kw
-        self.total_power_today_kwh = total_power_today_kwh
-        self.total_power_kwh = total_power_kwh
 
 
 def logged_in(func):
@@ -44,7 +22,7 @@ def logged_in(func):
     def wrapper(self, *args, **kwargs):
         try:
             result = func(self, *args, **kwargs)
-        except (json.JSONDecodeError, requests.exceptions.HTTPError):
+        except (JSONDecodeError, HTTPError):
             _LOGGER.info("Logging in")
             self._login()
             result = func(self, *args, **kwargs)
@@ -73,13 +51,13 @@ class FusionSolarClient:
         """
         self._user = username
         self._password = password
-        self._session = requests.session()
         self._huawei_subdomain = huawei_subdomain
+        self._session = requests.session()
         # hierarchy: company <- plants <- devices <- subdevices
         self._company_id = None
 
         # login immediately to ensure that the credentials are correct
-        self._login()
+        # self._login()
 
     def log_out(self):
         """Log out from the FusionSolarAPI
@@ -137,32 +115,6 @@ class FusionSolarClient:
         ]  # needed for post requests, otherwise it will return 401
 
     @logged_in
-    def get_power_status(self) -> PowerStatus:
-        """Retrieve the current power status. This is the complete
-           summary accross all stations.
-        :return: The current status as a PowerStatus object
-        """
-
-        url = f"https://{self._huawei_subdomain}.fusionsolar.huawei.com/rest/pvms/web/station/v1/station/total-real-kpi"
-        params = {
-            "queryTime": round(time.time() * 1000),
-            "timeZone": 1,
-            "_": round(time.time() * 1000),
-        }
-
-        r = self._session.get(url=url, params=params)
-        r.raise_for_status()
-        power_obj = r.json()
-
-        power_status = PowerStatus(
-            current_power_kw=power_obj["data"]["currentPower"],
-            total_power_today_kwh=power_obj["data"]["dailyEnergy"],
-            total_power_kwh=power_obj["data"]["cumulativeEnergy"],
-        )
-
-        return power_status
-
-    @logged_in
     def get_plant_ids(self) -> list:
         """Get the ids of all available plants linked
            to this account
@@ -186,6 +138,7 @@ class FusionSolarClient:
 
         # get the ids
         plant_ids = [obj["elementDn"] for obj in obj_tree[0]["childList"]]
+        # plant_name = [obj["nodeName"] for obj in obj_tree[0]["childList"]]
 
         return plant_ids
 
@@ -278,103 +231,37 @@ class FusionSolarClient:
             },
         )
         r.raise_for_status()
-        plant_data = r.json()
+        plant_stats = r.json()
 
-        if not plant_data["success"] or not "data" in plant_data:
+        if not plant_stats["success"] or not "data" in plant_stats:
             raise FusionSolarException(
                 f"Failed to retrieve plant status for {plant_id}"
             )
+        
+        plant_data=plant_stats['data']
 
-        # return the plant data
-        return plant_data["data"]
+        # process the dict of list into a dataframe
+        keys=list(plant_data.keys())
+        for key in keys:
+            if type(plant_data[key]) is not list:
+                plant_data.pop(key)
+        return (pandas.DataFrame
+            .from_dict(plant_data)
+            .set_index('xAxis')
+            .replace({'--':None})
+            .dropna(axis=0, how='all') # if we queried the current day, then the future timestamps should be dropped
+            .replace({None:0})
+            .astype('float')
+            .drop(columns=['radiationDosePower']) 
+            )
 
-    def get_last_plant_data(self, plant_data: dict) -> dict:
-        """Extracts the last measurements from the plant data
-        The dict contains detailed information about the data of the plant.
-        If "existInverter" the "productPower" is reported.
-        :param plant_data: The plant's stats data returned by get_plant_stats
-        """
-        # make sure the object is valid
-        if "xAxis" not in plant_data:
-            raise FusionSolarException("Invalid plant_data object passed.")
-
-        measurement_times = plant_data["xAxis"]
-
-        # initialize the extracted data
-        extracted_data = {}
-
-        if plant_data["existInverter"]:
-            (index, value) = self._get_last_value(plant_data["productPower"])
-            if index:
-                extracted_data["productPower"] = {
-                    "time": measurement_times[index],
-                    "value": value,
-                }
-            else:
-                extracted_data["productPower"] = {
-                    "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "value": None,
-                }
+    def get_last_plant_stats(self, plant_id:str) -> dict:
+        """returns the last known data point for the plant"""
+        plant_data_df = self.get_plant_stats(plant_id=plant_id)
+        if len(plant_data_df)>0:
+            return plant_data_df.iloc[-1].to_dict() #get latest entry
         else:
-            extracted_data["productPower"] = {"time": None, "value": None}
+            #no data available yet TODO
+            return None
 
-        if plant_data["existUsePower"]:
-            (index, value) = self._get_last_value(plant_data["usePower"])
-            if index:
-                extracted_data["usePower"] = {
-                    "time": measurement_times[index],
-                    "value": value,
-                }
-            else:
-                # updated data is now
-                extracted_data["usePower"] = {
-                    "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "value": None,
-                }
-        else:
-            extracted_data["usePower"] = {"time": None, "value": None}
 
-        if plant_data["existEnergyStore"]:
-            (index, value) = self._get_last_value(plant_data["chargePower"])
-            if index:
-                extracted_data["chargePower"] = {
-                    "time": measurement_times[index],
-                    "value": value,
-                }
-            else:
-                # updated data is now
-                extracted_data["chargePower"] = {
-                    "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "value": None,
-                }
-        else:
-            extracted_data["chargePower"] = {"time": None, "value": None}
-
-        # selfUsePower
-        # existEnergyStore - dischargePower
-        # radiationDosePower
-        # chargePower
-        # existMeter -
-        # disGridPower
-        # usePower
-        # existUsePower
-
-        return extracted_data
-
-    def _get_last_value(self, values: list):
-        """Get the last valid value from a values array where
-           missing values are stored as '--'
-        :param values: The list of values
-        :type values: list
-        :return: A Tuple with the index and value
-        """
-        found_value = False
-
-        for index, value in enumerate(values):
-            if value != "--":
-                found_value = True
-
-            if found_value and value == "--":
-                return (index - 1, float(values[index - 1]))
-
-        return (None, None)
