@@ -38,7 +38,7 @@ class FusionSolarClient:
     def __init__(
         self, username: str, password: str, huawei_subdomain: str = "region01eu5"
     ) -> None:
-        """Initialiazes a new FusionSolarClient instance. This is the main
+        """Initializes a new FusionSolarClient instance. This is the main
            class to interact with the FusionSolar API.
            The client tests the login credentials as soon as it is initialized
         :param username: The username for the system
@@ -55,6 +55,8 @@ class FusionSolarClient:
         self._session = requests.session()
         # hierarchy: company <- plants <- devices <- subdevices
         self._company_id = None
+
+        self.plants = []
 
         # login immediately to ensure that the credentials are correct
         # self._login()
@@ -115,11 +117,10 @@ class FusionSolarClient:
         ]  # needed for post requests, otherwise it will return 401
 
     @logged_in
-    def get_plant_ids(self) -> list:
+    def get_plants(self) -> list:
         """Get the ids of all available plants linked
            to this account
-        :return: A list of plant ids (strings)
-        :rtype: list
+        :return: A list of plants
         """
         # get the complete object tree
         r = self._session.get(
@@ -127,7 +128,7 @@ class FusionSolarClient:
             params={
                 "parentDn": self._company_id,
                 "self": "true",
-                "companyTree": "false",
+                "companyTree": "false", #"false",
                 "cond": '{"BUSINESS_DEVICE":1,"DOMAIN":1}',
                 "pageId": 1,
                 "_": round(time.time() * 1000),
@@ -137,18 +138,21 @@ class FusionSolarClient:
         obj_tree = r.json()
 
         # get the ids
-        plant_ids = [obj["elementDn"] for obj in obj_tree[0]["childList"]]
+        # plant_ids = [obj["elementDn"] for obj in obj_tree[0]["childList"]]
         # plant_name = [obj["nodeName"] for obj in obj_tree[0]["childList"]]
+        self.plants= [Plant(client=self, parent=self, id=obj["elementDn"] , name=obj["nodeName"] ) for obj in obj_tree[0]["childList"]]
 
-        return plant_ids
+        return self.plants
 
     @logged_in
-    def get_device_ids(self) -> dict:
+    def get_devices(self, parent=None) -> dict:
         """gets the devices associated to a given parent_id (can be a plant or a company/account)
         returns a dictionary mapping device_type to device_id"""
+        if parent is None:
+            parent=self._company_id
         url = f"https://{self._huawei_subdomain}.fusionsolar.huawei.com/rest/neteco/web/config/device/v1/device-list"
         params = {
-            "conditionParams.parentDn": self._company_id,  # can be a plant or company id
+            "conditionParams.parentDn": parent,  # can be a plant or company id
             "conditionParams.mocTypes": "20814,20815,20816,20819,20822,50017,60066,60014,60015,23037",  # specifies the types of devices
             "_": round(time.time() * 1000),
         }
@@ -156,10 +160,15 @@ class FusionSolarClient:
         r.raise_for_status()
         device_data = r.json()
 
-        device_key = {}
+        devices=[]
         for device in device_data["data"]:
-            device_key[device["mocTypeName"]] = device["dn"]
-        return device_key
+            devices.append(Device(client=self, parent=parent, id=device["dn"], 
+                                  name=device['name'], type=device["mocTypeName"]) )
+        return devices
+        # device_key = {}
+        # for device in device_data["data"]:
+        #     device_key[device["mocTypeName"]] = device["dn"]
+        # return device_key
 
     @logged_in
     def active_power_control(self, power_setting) -> None:
@@ -176,11 +185,14 @@ class FusionSolarClient:
         if power_setting not in power_setting_options:
             raise ValueError("Unknown power setting")
 
-        device_key = self.get_device_ids()
+        # find the dongle as power control needs to be done in the dongle
+        dongle_devices=[device for device in self.get_devices() if device.type=='Dongle']
+        if len(dongle_devices)!=1:
+            raise NotImplementedError("Exaclty one dongle per account supported currently")
 
         url = f"https://{self._huawei_subdomain}.fusionsolar.huawei.com/rest/pvms/web/device/v1/deviceExt/set-config-signals"
         data = {
-            "dn": device_key["Dongle"],  # power control needs to be done in the dongle
+            "dn": dongle_devices[0].id,  
             "changeValues": f'[{{"id":"230190032","value":"{power_setting_options[power_setting]}"}}]',  # 230190032 stands for "Active Power Control"
         }
 
@@ -212,7 +224,7 @@ class FusionSolarClient:
     @logged_in
     def get_plant_stats(
         self, plant_id: str, query_time=round(time.time() * 1000)
-    ) -> dict:
+    ) -> pandas.DataFrame:
         """Retrieves the complete plant usage statistics for the current day.
         :param plant_id: The plant's id
         :param query_time: should be the zeroth second of the day (otherwise data is missing for that day)
@@ -226,7 +238,7 @@ class FusionSolarClient:
                 "timeDim": 2,
                 "queryTime": query_time,
                 "timeZone": 2,  # 1 in no daylight
-                "timeZoneStr": "Europe/Vienna",
+                "timeZoneStr": "Europe/Brussels",
                 "_": round(time.time() * 1000),
             },
         )
@@ -265,3 +277,23 @@ class FusionSolarClient:
             return None
 
 
+class Plant:
+    def __init__(self, client, parent, id, name ) -> None:
+        self.client=client
+        self.parent=parent
+        self.id=id
+        self.name=name
+    
+    def get_plant_stats(self, query_time=round(time.time() * 1000)) -> pandas.DataFrame:
+        return self.client.get_plant_stats(self.id, query_time)
+
+    def get_last_plant_stats(self) -> dict:
+        return self.client.get_last_plant_stats(self.id)
+
+class Device:
+    def __init__(self, client, parent, id, name, type ) -> None:
+        self.client=client
+        self.parent=parent
+        self.id=id
+        self.name=name
+        self.type=type
