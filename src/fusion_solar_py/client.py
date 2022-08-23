@@ -128,7 +128,7 @@ class FusionSolarClient:
             params={
                 "parentDn": self._company_id,
                 "self": "true",
-                "companyTree": "false", #"false",
+                "companyTree": "false",  # "false",
                 "cond": '{"BUSINESS_DEVICE":1,"DOMAIN":1}',
                 "pageId": 1,
                 "_": round(time.time() * 1000),
@@ -140,7 +140,10 @@ class FusionSolarClient:
         # get the ids
         # plant_ids = [obj["elementDn"] for obj in obj_tree[0]["childList"]]
         # plant_name = [obj["nodeName"] for obj in obj_tree[0]["childList"]]
-        self.plants= [Plant(client=self, parent=self, id=obj["elementDn"] , name=obj["nodeName"] ) for obj in obj_tree[0]["childList"]]
+        self.plants = [
+            Plant(client=self, parent=self, id=obj["elementDn"], name=obj["nodeName"])
+            for obj in obj_tree[0]["childList"]
+        ]
 
         return self.plants
 
@@ -149,7 +152,7 @@ class FusionSolarClient:
         """gets the devices associated to a given parent_id (can be a plant or a company/account)
         returns a dictionary mapping device_type to device_id"""
         if parent is None:
-            parent=self._company_id
+            parent = self._company_id
         url = f"https://{self._huawei_subdomain}.fusionsolar.huawei.com/rest/neteco/web/config/device/v1/device-list"
         params = {
             "conditionParams.parentDn": parent,  # can be a plant or company id
@@ -160,10 +163,17 @@ class FusionSolarClient:
         r.raise_for_status()
         device_data = r.json()
 
-        devices=[]
+        devices = []
         for device in device_data["data"]:
-            devices.append(Device(client=self, parent=parent, id=device["dn"], 
-                                  name=device['name'], type=device["mocTypeName"]) )
+            devices.append(
+                Device(
+                    client=self,
+                    parent=parent,
+                    id=device["dn"],
+                    name=device["name"],
+                    type=device["mocTypeName"],
+                )
+            )
         return devices
         # device_key = {}
         # for device in device_data["data"]:
@@ -186,13 +196,17 @@ class FusionSolarClient:
             raise ValueError("Unknown power setting")
 
         # find the dongle as power control needs to be done in the dongle
-        dongle_devices=[device for device in self.get_devices() if device.type=='Dongle']
-        if len(dongle_devices)!=1:
-            raise NotImplementedError("Exaclty one dongle per account supported currently")
+        dongle_devices = [
+            device for device in self.get_devices() if device.type == "Dongle"
+        ]
+        if len(dongle_devices) != 1:
+            raise NotImplementedError(
+                "Exaclty one dongle per account supported currently"
+            )
 
         url = f"https://{self._huawei_subdomain}.fusionsolar.huawei.com/rest/pvms/web/device/v1/deviceExt/set-config-signals"
         data = {
-            "dn": dongle_devices[0].id,  
+            "dn": dongle_devices[0].id,
             "changeValues": f'[{{"id":"230190032","value":"{power_setting_options[power_setting]}"}}]',  # 230190032 stands for "Active Power Control"
         }
 
@@ -249,44 +263,43 @@ class FusionSolarClient:
             return r
         plant_stats = r.json()
 
-        #TODO this url also returns the total values
+        # TODO this url also returns the total values
 
         if not plant_stats["success"] or not "data" in plant_stats:
             raise FusionSolarException(
                 f"Failed to retrieve plant status for {plant_id}"
             )
-        
-        plant_data=plant_stats['data']
+
+        plant_data = plant_stats["data"]
 
         # process the dict of list into a dataframe
-        keys=list(plant_data.keys())
+        keys = list(plant_data.keys())
         for key in keys:
             if type(plant_data[key]) is not list:
                 plant_data.pop(key)
-        return (pandas.DataFrame
-            .from_dict(plant_data)
-            .set_index('xAxis')
-            .replace({'--':None})
-            .dropna(axis=0, how='all') # if we queried the current day, then the future timestamps should be dropped
-            .replace({None:0})
-            .astype('float')
-            .drop(columns=['radiationDosePower']) 
-            )
+        return (
+            pandas.DataFrame.from_dict(plant_data)
+            .set_index("xAxis")
+            .replace({"--": None})
+            .dropna(
+                axis=0, how="all"
+            )  # if we queried the current day, then the future timestamps should be dropped
+            .replace({None: 0})
+            .astype("float")
+            .drop(columns=["radiationDosePower"])
+        )
 
-    def get_last_plant_stats(self, plant_id:str) -> dict:
+    def get_last_plant_stats(self, plant_id: str) -> dict:
         """returns the last known data point for the plant"""
         plant_data_df = self.get_plant_stats(plant_id=plant_id)
-        if len(plant_data_df)>0:
-            return plant_data_df.iloc[-1].to_dict() #get latest entry
+        if len(plant_data_df) > 0:
+            return plant_data_df.iloc[-1].to_dict()  # get latest entry
         else:
-            #no data available yet TODO
+            # no data available yet TODO
             return None
 
-
     @logged_in
-    def get_device_stats(
-        self, device_id: str, return_resp=False
-    ) -> dict:
+    def get_device_stats(self, device_id: str, return_resp=False) -> dict:
         """Retrieves the all current metrics for a certain device.
         :param device_id: The device's id
         :type plant_id: str
@@ -294,10 +307,7 @@ class FusionSolarClient:
         """
         r = self._session.get(
             url=f"https://{self._huawei_subdomain}.fusionsolar.huawei.com/rest/pvms/web/device/v1/device-signals",
-            params={
-                "deviceDn": device_id,
-                "_": round(time.time() * 1000),
-            },
+            params={"deviceDn": device_id, "_": round(time.time() * 1000),},
         )
         r.raise_for_status()
         if return_resp:
@@ -308,43 +318,44 @@ class FusionSolarClient:
             raise FusionSolarException(
                 f"Failed to retrieve plant status for {device_id}"
             )
-        
-     
-        device_data={}
-        for parameter in r.json()['data']:
-            if set(('name','value')) <= parameter.keys():
-                if (parameter['name']!='') and (parameter['value']!=''):
-                    if parameter['unit']!='':
-                        device_data[f"{parameter['name']} ({parameter['unit']})"]=parameter['value']
-                    else:
-                        device_data[parameter['name']]=parameter['value']
 
+        device_data = {}
+        for parameter in r.json()["data"]:
+            if set(("name", "value")) <= parameter.keys():
+                if (parameter["name"] != "") and (parameter["value"] != ""):
+                    if parameter["unit"] != "":
+                        device_data[
+                            f"{parameter['name']} ({parameter['unit']})"
+                        ] = parameter["value"]
+                    else:
+                        device_data[parameter["name"]] = parameter["value"]
 
         return device_data
 
 
-
-
 class Plant:
-    def __init__(self, client, parent, id, name ) -> None:
-        self.client=client
-        self.parent=parent
-        self.id=id
-        self.name=name
-    
-    def get_plant_stats(self, query_time=round(time.time() * 1000), **kwargs) -> pandas.DataFrame:
+    def __init__(self, client, parent, id, name) -> None:
+        self.client = client
+        self.parent = parent
+        self.id = id
+        self.name = name
+
+    def get_plant_stats(
+        self, query_time=round(time.time() * 1000), **kwargs
+    ) -> pandas.DataFrame:
         return self.client.get_plant_stats(self.id, query_time, **kwargs)
 
     def get_last_plant_stats(self, **kwargs) -> dict:
         return self.client.get_last_plant_stats(self.id, **kwargs)
 
+
 class Device:
-    def __init__(self, client, parent, id, name, type ) -> None:
-        self.client=client
-        self.parent=parent
-        self.id=id
-        self.name=name
-        self.type=type
+    def __init__(self, client, parent, id, name, type) -> None:
+        self.client = client
+        self.parent = parent
+        self.id = id
+        self.name = name
+        self.type = type
 
     def get_device_stats(self, **kwargs) -> dict:
         return self.client.get_device_stats(self.id, **kwargs)
