@@ -200,7 +200,7 @@ class FusionSolarClient:
         r.raise_for_status()
 
     @logged_in
-    def get_plant_flow(self, plant_id: str) -> dict:
+    def get_plant_flow(self, plant_id: str, return_resp=False) -> dict:
         """Retrieves the data for the energy flow
         diagram displayed for each plant
         :param plant_id: The plant's id
@@ -214,6 +214,8 @@ class FusionSolarClient:
         )
 
         r.raise_for_status()
+        if return_resp:
+            return r
         flow_data = r.json()
 
         if not flow_data["success"] or not "data" in flow_data:
@@ -223,7 +225,7 @@ class FusionSolarClient:
 
     @logged_in
     def get_plant_stats(
-        self, plant_id: str, query_time=round(time.time() * 1000)
+        self, plant_id: str, query_time=round(time.time() * 1000), return_resp=False
     ) -> pandas.DataFrame:
         """Retrieves the complete plant usage statistics for the current day.
         :param plant_id: The plant's id
@@ -243,7 +245,11 @@ class FusionSolarClient:
             },
         )
         r.raise_for_status()
+        if return_resp:
+            return r
         plant_stats = r.json()
+
+        #TODO this url also returns the total values
 
         if not plant_stats["success"] or not "data" in plant_stats:
             raise FusionSolarException(
@@ -277,6 +283,48 @@ class FusionSolarClient:
             return None
 
 
+    @logged_in
+    def get_device_stats(
+        self, device_id: str, return_resp=False
+    ) -> dict:
+        """Retrieves the all current metrics for a certain device.
+        :param device_id: The device's id
+        :type plant_id: str
+        :return: _description_
+        """
+        r = self._session.get(
+            url=f"https://{self._huawei_subdomain}.fusionsolar.huawei.com/rest/pvms/web/device/v1/device-signals",
+            params={
+                "deviceDn": device_id,
+                "_": round(time.time() * 1000),
+            },
+        )
+        r.raise_for_status()
+        if return_resp:
+            return r
+        device_stats = r.json()
+
+        if not device_stats["success"] or not "data" in device_stats:
+            raise FusionSolarException(
+                f"Failed to retrieve plant status for {device_id}"
+            )
+        
+     
+        device_data={}
+        for parameter in r.json()['data']:
+            if set(('name','value')) <= parameter.keys():
+                if (parameter['name']!='') and (parameter['value']!=''):
+                    if parameter['unit']!='':
+                        device_data[f"{parameter['name']} ({parameter['unit']})"]=parameter['value']
+                    else:
+                        device_data[parameter['name']]=parameter['value']
+
+
+        return device_data
+
+
+
+
 class Plant:
     def __init__(self, client, parent, id, name ) -> None:
         self.client=client
@@ -284,11 +332,11 @@ class Plant:
         self.id=id
         self.name=name
     
-    def get_plant_stats(self, query_time=round(time.time() * 1000)) -> pandas.DataFrame:
-        return self.client.get_plant_stats(self.id, query_time)
+    def get_plant_stats(self, query_time=round(time.time() * 1000), **kwargs) -> pandas.DataFrame:
+        return self.client.get_plant_stats(self.id, query_time, **kwargs)
 
-    def get_last_plant_stats(self) -> dict:
-        return self.client.get_last_plant_stats(self.id)
+    def get_last_plant_stats(self, **kwargs) -> dict:
+        return self.client.get_last_plant_stats(self.id, **kwargs)
 
 class Device:
     def __init__(self, client, parent, id, name, type ) -> None:
@@ -297,3 +345,6 @@ class Device:
         self.id=id
         self.name=name
         self.type=type
+
+    def get_device_stats(self, **kwargs) -> dict:
+        return self.client.get_device_stats(self.id, **kwargs)
