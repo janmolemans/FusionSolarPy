@@ -217,6 +217,7 @@ class FusionSolarClient:
     def get_plant_flow(self, plant_id: str, return_resp=False) -> dict:
         """Retrieves the data for the energy flow
         diagram displayed for each plant
+        This function does not return nicely formatted data
         :param plant_id: The plant's id
         :type plant_id: str
         :return: The complete data structure as a dict
@@ -235,7 +236,7 @@ class FusionSolarClient:
         if not flow_data["success"] or not "data" in flow_data:
             raise FusionSolarException(f"Failed to retrieve plant flow for {plant_id}")
 
-        return flow_data
+        return flow_data["data"]
 
     @logged_in
     def get_plant_stats(
@@ -319,18 +320,25 @@ class FusionSolarClient:
                 f"Failed to retrieve plant status for {device_id}"
             )
 
-        device_data = {}
+        metrics = []
         for parameter in r.json()["data"]:
             if set(("name", "value")) <= parameter.keys():
                 if (parameter["name"] != "") and (parameter["value"] != ""):
-                    if parameter["unit"] != "":
-                        device_data[
-                            f"{parameter['name']} ({parameter['unit']})"
-                        ] = parameter["value"]
-                    else:
-                        device_data[parameter["name"]] = parameter["value"]
-
-        return device_data
+                    metrics.append(
+                        Metric(
+                            parent=device_id,
+                            id=parameter["id"],  # id is not unique accross devices
+                            name=parameter["name"],
+                            unit=parameter["unit"],
+                        )
+                    )
+                    # if parameter["unit"] != "":
+                    #     device_data[
+                    #         f"{parameter['id']} {parameter['name']} ({parameter['unit']})"
+                    #     ] = parameter["value"]
+                    # else:
+                    #     device_data[parameter["name"]] = parameter["value"]
+        return metrics
 
 
 class Plant:
@@ -340,10 +348,11 @@ class Plant:
         self.id = id
         self.name = name
 
-    def get_plant_stats(
-        self, query_time=round(time.time() * 1000), **kwargs
-    ) -> pandas.DataFrame:
-        return self.client.get_plant_stats(self.id, query_time, **kwargs)
+    def get_plant_flow(self, **kwargs) -> dict:
+        return self.client.get_plant_flow(self.id, **kwargs)
+
+    def get_plant_stats(self, **kwargs) -> pandas.DataFrame:
+        return self.client.get_plant_stats(self.id, **kwargs)
 
     def get_last_plant_stats(self, **kwargs) -> dict:
         return self.client.get_last_plant_stats(self.id, **kwargs)
@@ -359,3 +368,11 @@ class Device:
 
     def get_device_stats(self, **kwargs) -> dict:
         return self.client.get_device_stats(self.id, **kwargs)
+
+
+class Metric:
+    def __init__(self, parent, id, name, unit) -> None:
+        self.parent = parent
+        self.id = id
+        self.name = name
+        self.unit = unit
