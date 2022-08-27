@@ -320,18 +320,18 @@ class FusionSolarClient:
                 f"Failed to retrieve plant status for {device_id}"
             )
 
-        metrics = []
+        metrics = {}
         for parameter in r.json()["data"]:
             if set(("name", "value")) <= parameter.keys():
                 if (parameter["name"] != "") and (parameter["value"] != ""):
-                    metrics.append(
-                        Metric(
-                            parent=device_id,
-                            id=parameter["id"],  # id is not unique accross devices
-                            name=parameter["name"],
-                            unit=parameter["unit"],
-                        )
+                    metrics[parameter["name"]] = Metric(
+                        parent=device_id,
+                        id=parameter["id"],  # id is not unique accross devices
+                        name=parameter["name"],
+                        unit=parameter["unit"],
+                        value=parameter["value"],
                     )
+
                     # if parameter["unit"] != "":
                     #     device_data[
                     #         f"{parameter['id']} {parameter['name']} ({parameter['unit']})"
@@ -371,8 +371,9 @@ class Device:
 
 
 class Metric:
-    def __init__(self, parent, id, name, unit) -> None:
+    def __init__(self, parent, id, name, unit, value) -> None:
         self.parent = parent
         self.id = id
         self.name = name
         self.unit = unit
+        self.value = value
