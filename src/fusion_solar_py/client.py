@@ -24,7 +24,7 @@ def logged_in(func):
             result = func(self, *args, **kwargs)
         except (JSONDecodeError, HTTPError):
             _LOGGER.info("Logging in")
-            self._login()
+            self.login()
             result = func(self, *args, **kwargs)
         return result
 
@@ -59,9 +59,9 @@ class FusionSolarClient:
         self.plants = []
 
         # login immediately to ensure that the credentials are correct
-        # self._login()
+        # self.login()
 
-    def log_out(self):
+    def logout(self):
         """Log out from the FusionSolarAPI
         """
         self._session.get(
@@ -71,7 +71,7 @@ class FusionSolarClient:
             },
         )
 
-    def _login(self):
+    def login(self):
         """Logs into the Fusion Solar API. Raises an exception if the login fails.
         """
         # check the login credentials right away
