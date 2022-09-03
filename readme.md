@@ -2,8 +2,10 @@
 
 
 
-A python client for the HuaweiFusionSolar API used to monitor
-solar power plants.
+A python client for the HuaweiFusionSolar API used to monitor solar power plants.
+There were 2 main goals: 
+- being able to retreive realtime statistics for use in Home Assistant -> see this integration: https://github.com/janmolemans/huawei_fusionsolar
+- being able to retreive historical statistics for plotting and stuff
 
 This client uses the https://region01eu5.fusionsolar.huawei.com end point by default. It is
 possible to change this using the `huawei_subdomain` parameter. 
@@ -83,7 +85,7 @@ for device in devices:
         print(metric.name, metric.value, metric.unit)
         units.add(metric.unit)
         # values.append(metric.value)
-        break
+        break # uncomment for more prints
     # print(device.name, device.type)
     # print(json.dumps(device.get_device_stats(), indent=4))
     # r= device.get_device_stats(return_resp=True)
@@ -106,7 +108,7 @@ import pandas
 pandas.options.plotting.backend = "plotly"
 
 d = datetime.datetime.now()
-# d = datetime.datetime(2022,11,1)
+d = datetime.datetime(2022,9,1)
 dt = datetime.datetime(
     year=d.year,
     month=d.month,
