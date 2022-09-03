@@ -56,8 +56,6 @@ class FusionSolarClient:
         # hierarchy: company <- plants <- devices <- subdevices
         self._company_id = None
 
-        self.plants = []
-
         # login immediately to ensure that the credentials are correct
         # self.login()
 
@@ -140,12 +138,12 @@ class FusionSolarClient:
         # get the ids
         # plant_ids = [obj["elementDn"] for obj in obj_tree[0]["childList"]]
         # plant_name = [obj["nodeName"] for obj in obj_tree[0]["childList"]]
-        self.plants = [
+        plants= [
             Plant(client=self, parent=self, id=obj["elementDn"], name=obj["nodeName"])
             for obj in obj_tree[0]["childList"]
         ]
 
-        return self.plants
+        return plants
 
     @logged_in
     def get_devices(self, parent=None) -> dict:
@@ -356,6 +354,10 @@ class Plant:
 
     def get_last_plant_stats(self, **kwargs) -> dict:
         return self.client.get_last_plant_stats(self.id, **kwargs)
+    
+    def get_devices(self, **kwargs):
+        return self.client.get_devices(self.id, **kwargs)
+
 
 
 class Device:
