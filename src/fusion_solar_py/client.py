@@ -118,7 +118,7 @@ class FusionSolarClient:
     def get_plants(self) -> list:
         """Get the ids of all available plants linked
            to this account
-        :return: A list of plants
+        :return: A list of plant objects
         """
         # get the complete object tree
         r = self._session.get(
@@ -135,10 +135,7 @@ class FusionSolarClient:
         r.raise_for_status()
         obj_tree = r.json()
 
-        # get the ids
-        # plant_ids = [obj["elementDn"] for obj in obj_tree[0]["childList"]]
-        # plant_name = [obj["nodeName"] for obj in obj_tree[0]["childList"]]
-        plants= [
+        plants = [
             Plant(client=self, parent=self, id=obj["elementDn"], name=obj["nodeName"])
             for obj in obj_tree[0]["childList"]
         ]
@@ -146,9 +143,9 @@ class FusionSolarClient:
         return plants
 
     @logged_in
-    def get_devices(self, parent=None) -> dict:
+    def get_devices(self, parent=None) -> list:
         """gets the devices associated to a given parent_id (can be a plant or a company/account)
-        returns a dictionary mapping device_type to device_id"""
+        returns a list of device objects"""
         if parent is None:
             parent = self._company_id
         url = f"https://{self._huawei_subdomain}.fusionsolar.huawei.com/rest/neteco/web/config/device/v1/device-list"
@@ -330,12 +327,6 @@ class FusionSolarClient:
                         value=parameter["value"],
                     )
 
-                    # if parameter["unit"] != "":
-                    #     device_data[
-                    #         f"{parameter['id']} {parameter['name']} ({parameter['unit']})"
-                    #     ] = parameter["value"]
-                    # else:
-                    #     device_data[parameter["name"]] = parameter["value"]
         return metrics
 
 
@@ -354,10 +345,9 @@ class Plant:
 
     def get_last_plant_stats(self, **kwargs) -> dict:
         return self.client.get_last_plant_stats(self.id, **kwargs)
-    
-    def get_devices(self, **kwargs):
-        return self.client.get_devices(self.id, **kwargs)
 
+    def get_devices(self, **kwargs) -> list:
+        return self.client.get_devices(self.id, **kwargs)
 
 
 class Device:
