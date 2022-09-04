@@ -15,6 +15,7 @@ dependencies = [
     "pandas",
     "requests",
     "plotly",
+    "kaleido",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
