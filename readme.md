@@ -3,8 +3,9 @@
 
 
 A python client for the HuaweiFusionSolar API used to monitor solar power plants.
-There were 2 main goals: 
-- being able to retreive realtime statistics for use in Home Assistant -> see this integration: https://github.com/janmolemans/huawei_fusionsolar
+For use of this api there is thus no openAPI account needed, your normal credentials to log in to the web portal should work.
+This client had 2 main goals: 
+- being able to retreive realtime statistics and change parameters for use in Home Assistant -> see this integration: https://github.com/janmolemans/huawei_fusionsolar
 - being able to retreive historical statistics for plotting and stuff
 
 This client uses the https://region01eu5.fusionsolar.huawei.com end point by default. It is
@@ -15,6 +16,10 @@ Please report any bugs!
 This file is a markdown export of the readme.ipynb notebook.
 
 ```jupyter nbconvert readme.ipynb --to markdown```
+
+# Install
+
+`pip install huawei-fusionsolar`
 
 # Example usage
 
@@ -136,7 +141,7 @@ Image(img_bytes)
 
 
     
-![png](readme_files/readme_16_0.png)
+![png](readme_files/readme_18_0.png)
     
 
 

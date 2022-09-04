@@ -1,3 +1,27 @@
 [build-system]
 requires = ["setuptools>=42"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "huawei_fusionsolar"
+version = "0.0.2"
+authors = [
+  { name="Jan Molemans", email="jan.molemans@gmail.com" },
+]
+description = "API to the Huawei Fusion Solar web interface."
+readme = "README.md"
+license = { file="LICENSE" }
+dependencies = [
+    "pandas",
+    "requests",
+    "plotly",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/janmolemans/FusionSolarPy"
+"Bug Tracker" = "https://github.com/janmolemans/FusionSolarPy/issues"
