@@ -26,23 +26,9 @@ This file is a markdown export of the readme.ipynb notebook.
 
 ```python
 # from src.fusion_solar_py.client import FusionSolarClient
-from huawei_fusionsolar.client import FusionSolarClient
+from fusion_solar_py.client import FusionSolarClient
 import json
 ```
-
-
-    ---------------------------------------------------------------------------
-
-    ModuleNotFoundError                       Traceback (most recent call last)
-
-    /home/jan/code_projects/FusionSolarPy/readme.ipynb Cell 7 in <cell line: 2>()
-          <a href='vscode-notebook-cell://wsl%2Bubuntu/home/jan/code_projects/FusionSolarPy/readme.ipynb#W4sdnNjb2RlLXJlbW90ZQ%3D%3D?line=0'>1</a> # from src.fusion_solar_py.client import FusionSolarClient
-    ----> <a href='vscode-notebook-cell://wsl%2Bubuntu/home/jan/code_projects/FusionSolarPy/readme.ipynb#W4sdnNjb2RlLXJlbW90ZQ%3D%3D?line=1'>2</a> from huawei_fusionsolar.client import FusionSolarClient
-          <a href='vscode-notebook-cell://wsl%2Bubuntu/home/jan/code_projects/FusionSolarPy/readme.ipynb#W4sdnNjb2RlLXJlbW90ZQ%3D%3D?line=2'>3</a> import json
-
-
-    ModuleNotFoundError: No module named 'huawei_fusionsolar'
-
 
 ## Create client
 
