@@ -11,7 +11,7 @@ from .exceptions import *
 
 # global logger object
 _LOGGER = logging.getLogger(__name__)
-
+LOCAL_TIMEZONE = "Europe/Brussels" #TODO infer automatically
 
 def logged_in(func):
     """
@@ -234,23 +234,64 @@ class FusionSolarClient:
         return flow_data["data"]
 
     @logged_in
+    def get_plant_report(
+        self,
+        plant_id: str,
+        query_time=round(time.time() * 1000),
+        return_resp=False,
+    ) -> pandas.DataFrame:
+        """Retrieves the complete plant report for the current day.
+        :param plant_id: The plant's id
+        :param query_time: should be the zeroth second of the day (otherwise data is missing for that day)
+        """
+        r = self._session.post(
+            url=f"https://{self._huawei_subdomain}.fusionsolar.huawei.com/rest/pvms/web/report/v1/station/station-kpi-list",
+            json={
+                "orderBy": "fmtCollectTimeStr",
+                "page": 1,
+                "pageSize": 24,
+                "moList": [{"moType": 20801, "moString": plant_id}],
+                "counterIDs": ["productPower", "inverterPower", "onGridPower",],
+                "sort": "asc",
+                "statDim": "2",
+                "statTime": query_time,
+                "statType": "1",
+                # "station": "1",
+                "timeZone": 2,
+                "timeZoneStr": LOCAL_TIMEZONE,
+            },
+        )
+        r.raise_for_status()
+        if return_resp:
+            return r
+        report_data = r.json()
+        df = pandas.DataFrame.from_records(report_data)
+        df["fmtCollectTimeStr"] = pandas.to_datetime(
+            df["fmtCollectTimeStr"]
+        ).dt.tz_localize(LOCAL_TIMEZONE)
+        return df
+
+    @logged_in
     def get_plant_stats(
-        self, plant_id: str, query_time=round(time.time() * 1000), return_resp=False
+        self,
+        plant_id: str,
+        query_time=round(time.time() * 1000),
+        return_resp=False,
+        time_dim=2,
     ) -> pandas.DataFrame:
         """Retrieves the complete plant usage statistics for the current day.
         :param plant_id: The plant's id
         :param query_time: should be the zeroth second of the day (otherwise data is missing for that day)
-        :type plant_id: str
-        :return: _description_
+        :param time_dim: aggregation level: 2=5min, 3=1hour (but gives error), 4=1day, 5=1month, 6=1year
         """
         r = self._session.get(
             url=f"https://{self._huawei_subdomain}.fusionsolar.huawei.com/rest/pvms/web/station/v1/overview/energy-balance",
             params={
                 "stationDn": plant_id,
-                "timeDim": 2,
+                "timeDim": time_dim,
                 "queryTime": query_time,
                 "timeZone": 2,  # 1 in no daylight
-                "timeZoneStr": "Europe/Brussels",
+                "timeZoneStr": LOCAL_TIMEZONE,
                 "_": round(time.time() * 1000),
             },
         )
@@ -273,7 +314,7 @@ class FusionSolarClient:
         for key in keys:
             if type(plant_data[key]) is not list:
                 plant_data.pop(key)
-        return (
+        df= (
             pandas.DataFrame.from_dict(plant_data)
             .set_index("xAxis")
             .replace({"--": None})
@@ -284,6 +325,9 @@ class FusionSolarClient:
             .astype("float")
             .drop(columns=["radiationDosePower"])
         )
+        df.index=pandas.to_datetime(df.index).tz_localize(LOCAL_TIMEZONE)
+        return df
+
 
     def get_last_plant_stats(self, plant_id: str) -> dict:
         """returns the last known data point for the plant"""
@@ -339,6 +383,9 @@ class Plant:
 
     def get_plant_flow(self, **kwargs) -> dict:
         return self.client.get_plant_flow(self.id, **kwargs)
+
+    def get_plant_report(self, **kwargs) -> pandas.DataFrame:
+        return self.client.get_plant_stats(self.id, **kwargs)
 
     def get_plant_stats(self, **kwargs) -> pandas.DataFrame:
         return self.client.get_plant_stats(self.id, **kwargs)
