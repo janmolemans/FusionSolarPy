@@ -328,12 +328,22 @@ class FusionSolarClient:
         df.index=pandas.to_datetime(df.index).tz_localize(LOCAL_TIMEZONE)
         return df
 
-
+    @logged_in
     def get_last_plant_stats(self, plant_id: str) -> dict:
         """returns the last known data point for the plant"""
         plant_data_df = self.get_plant_stats(plant_id=plant_id)
         if len(plant_data_df) > 0:
-            return plant_data_df.iloc[-1].to_dict()  # get latest entry
+            plant_data_dic= plant_data_df.iloc[-1].to_dict()  # get latest entry
+            metrics = {}
+            for key, value in plant_data_dic.items():
+                metrics[key] = Metric(
+                            parent=plant_id,
+                            id=key,  # id is not unique accross devices
+                            name=key,
+                            unit="kW",
+                            value=value,
+                        )
+            return metrics
         else:
             # no data available yet TODO
             return None
