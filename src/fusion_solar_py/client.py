@@ -11,7 +11,8 @@ from .exceptions import *
 
 # global logger object
 _LOGGER = logging.getLogger(__name__)
-LOCAL_TIMEZONE = "Europe/Brussels" #TODO infer automatically
+LOCAL_TIMEZONE = "Europe/Brussels"  # TODO infer automatically
+
 
 def logged_in(func):
     """
@@ -237,7 +238,9 @@ class FusionSolarClient:
     def get_plant_report(
         self,
         plant_id: str,
-        query_time=round(time.time() * 1000),
+        query_time=int(
+            pandas.Timestamp.now(tz=LOCAL_TIMEZONE).floor("d").timestamp() * 1000
+        ),
         return_resp=False,
     ) -> pandas.DataFrame:
         """Retrieves the complete plant report for the current day.
@@ -275,7 +278,9 @@ class FusionSolarClient:
     def get_plant_stats(
         self,
         plant_id: str,
-        query_time=round(time.time() * 1000),
+        query_time=int(
+            pandas.Timestamp.now(tz=LOCAL_TIMEZONE).floor("d").timestamp() * 1000
+        ),
         return_resp=False,
         time_dim=2,
     ) -> pandas.DataFrame:
@@ -314,7 +319,7 @@ class FusionSolarClient:
         for key in keys:
             if type(plant_data[key]) is not list:
                 plant_data.pop(key)
-        df= (
+        df = (
             pandas.DataFrame.from_dict(plant_data)
             .set_index("xAxis")
             .replace({"--": None})
@@ -325,7 +330,7 @@ class FusionSolarClient:
             .astype("float")
             .drop(columns=["radiationDosePower"])
         )
-        df.index=pandas.to_datetime(df.index).tz_localize(LOCAL_TIMEZONE)
+        df.index = pandas.to_datetime(df.index).tz_localize(LOCAL_TIMEZONE)
         return df
 
     @logged_in
@@ -333,20 +338,92 @@ class FusionSolarClient:
         """returns the last known data point for the plant"""
         plant_data_df = self.get_plant_stats(plant_id=plant_id)
         if len(plant_data_df) > 0:
-            plant_data_dic= plant_data_df.iloc[-1].to_dict()  # get latest entry
+            plant_data_dic = plant_data_df.iloc[-1].to_dict()  # get latest entry
             metrics = {}
             for key, value in plant_data_dic.items():
                 metrics[key] = Metric(
-                            parent=plant_id,
-                            id=key,  # id is not unique accross devices
-                            name=key,
-                            unit="kW",
-                            value=value,
-                        )
+                    parent=plant_id,
+                    id=key,  # id is not unique accross devices
+                    name=key,
+                    unit="kW",
+                    value=value,
+                )
             return metrics
         else:
             # no data available yet TODO
             return None
+
+    @logged_in
+    def _get_device_stat_options(self, device_id: str, return_resp=False) -> dict:
+        """Retrieves all metric options for a certain device.
+        :param device_id: The device's id
+        :type plant_id: str
+        :return: _description_
+        """
+        r = self._session.get(
+            url=f"https://{self._huawei_subdomain}.fusionsolar.huawei.com/rest/pvms/web/device/v1/device-statistics-signal",
+            params={"deviceDn": device_id, "_": round(time.time() * 1000),},
+        )
+        r.raise_for_status()
+        if return_resp:
+            return r
+        id_to_name = {}
+        name_to_id = {}
+        for option in r.json()["data"]["signalList"]:
+            id_to_name[option["id"]] = option["name"]  # option['unit']['unit']
+            # name_to_id[option['name']]=option['id']
+        return id_to_name  # ,name_to_id
+
+    @logged_in
+    def get_hist_device_stats(
+        self,
+        device_id: str,
+        query_time=int(
+            pandas.Timestamp.now(tz=LOCAL_TIMEZONE).floor("d").timestamp() * 1000
+        ),
+        return_resp=False,
+    ) -> dict:
+        """Retrieves the all current metrics for a certain device.
+        :param device_id: The device's id
+        :type plant_id: str
+        :return: _description_
+        """
+        id_to_name = self._get_device_stat_options(device_id)
+
+        r = self._session.get(
+            url=f"https://{self._huawei_subdomain}.fusionsolar.huawei.com/rest/pvms/web/device/v1/device-history-data",
+            params={
+                "signalIds": id_to_name.keys(),  # [30014, 30017],
+                "date": query_time,
+                "deviceDn": device_id,
+                "_": round(time.time() * 1000),
+            },
+        )
+        r.raise_for_status()
+        if return_resp:
+            return r
+        device_stats = r.json()
+
+        if not device_stats["success"] or not "data" in device_stats:
+            raise FusionSolarException(
+                f"Failed to retrieve plant status for {device_id}"
+            )
+
+        df_result = None
+        for i, signal in enumerate(r.json()["data"]):
+            # print(id_to_name[int(signal)])
+            temp_df = pandas.DataFrame.from_records(
+                data=r.json()["data"][signal]["pmDataList"],
+                index="startTime",
+                columns=["startTime", "counterValue"],
+            ).rename(columns={"counterValue": id_to_name[int(signal)]})
+            temp_df = temp_df[temp_df[id_to_name[int(signal)]] < 1e308]
+            if i == 0:
+                df_result = temp_df
+            else:
+                df_result = df_result.join(temp_df)
+
+        return df_result
 
     @logged_in
     def get_device_stats(self, device_id: str, return_resp=False) -> dict:
@@ -417,6 +494,12 @@ class Device:
 
     def get_device_stats(self, **kwargs) -> dict:
         return self.client.get_device_stats(self.id, **kwargs)
+
+    # def get_device_stat_options(self, **kwargs):
+    #     return self.client._get_device_stat_options(self.id, **kwargs)
+
+    def get_hist_device_stats(self, **kwargs):
+        return self.client.get_hist_device_stats(self.id, **kwargs)
 
 
 class Metric:
