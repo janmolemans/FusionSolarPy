@@ -2,6 +2,7 @@ test.py
 .vscode
 .pytest_cache
 tests/credentials.json
+data
 dist
 *.egg-info
 __pycache__
